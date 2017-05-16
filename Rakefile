@@ -1,2 +1,7 @@
 require "bundler/gem_tasks"
-task :default => :spec
+require 'rspec/core/rake_task'
+require 'yard'
+
+task default: :spec
+RSpec::Core::RakeTask.new('spec')
+YARD::Rake::YardocTask.new
