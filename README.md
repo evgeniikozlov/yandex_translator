@@ -41,7 +41,7 @@ translator.lang_detect(text, hint=nil)
 4. To translate text use method **translate**:
 
 ```ruby
-translator.translate(text, lang, format:nil, options:nil)
+translator.translate(text, lang, format:plain, options:0)
 ```
 
 ## License
