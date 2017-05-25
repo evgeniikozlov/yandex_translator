@@ -5,12 +5,22 @@ require "yandex_translator/version"
 module YandexTranslator
   require 'net/http'
   require 'json'
+  require 'http'
 
   class YandexError < StandardError; end
 
+  class WrongAPIKeyError < YandexError; end
+  class BlockedAPIKeyError < YandexError; end
+  class DaylyLimitExceededError < YandexError; end
+  class MaximumTextSizeExceededError < YandexError; end
+  class TextCannotBeTranslatedError < YandexError; end
+  class SelectedTranslationDirectionNotSupportedError < YandexError; end
+
+  # A Translator class
+  #
   class Translator
     attr_accessor :key, :detected
-    @@url_base = 'https://translate.yandex.net/api/v1.5/tr.json/'
+    Url_base = 'https://translate.yandex.net/api/v1.5/tr.json/'
 
     # Returns the Translator object
     #
@@ -19,61 +29,60 @@ module YandexTranslator
       @detected = nil
     end
 
-    # Returns the list of available translation pairs and
-    # If the _lang_ argument is set also returns transcriptions of languages abbreviations
+    # Returns the hash with keys:
+    # * "dirs" with values of available translation pairs
+    # * "langs" with keys languages abbreviations transcriptions(if the _lang_ argument is set)
     #
     def lang_list(lang=nil)
-      url = @@url_base + 'getLangs?' + 'key=' + @key
-      if lang then url += '&ui=' + lang end
-      url = URI(url)
-      res = JSON.parse(Net::HTTP.get(url))
-      check_errors(res)
-      return res
+      requester(:lang_list, {:key => @key}, nil)
     end
 
     # Returns possible text languages
-    # The _hint_ argument defaults to *nil*, can be a string or an array of prefered languages
+    # The _hint_ argument defaults to *nil*, should be a string of prefered languages, separator ","
     #
     def lang_detect(text, hint=nil)
-      url = @@url_base + 'detect?key=' + @key + '&text=' + URI::encode(text)
-      if hint
-        url += '&hint='
-        if hint.is_a?(String)  # parse hint if it is a string or array
-          url += hint
-        else
-          hint.each { |x| url += x + ','}
-          url = url[0..-2]
-        end
-      end
-      url = URI(url)
-      res = JSON.parse(Net::HTTP.get(url))
-      check_errors(res)
-      return res['lang']
+      requester(:lang_detect, {:key => @key, :hint => hint}, {:text => URI::encode(text)})
     end
 
     # Return the translation of the _text_ argument
     # _lang_ argument can be 2 types:
     # * The pair of the languages "from-to" ('en-ru')
     # * One destination language ('en')
-    # _format_ argument defaults to *nil*. Can be "plain" for plain text or "html" for HTMl marked text
-    # _options_ argument defaults to *nil*. Can be "1" to include to the response the autodetected language of the source text. You can obtain it by attribute *detected*
-    def translate(text, lang, format:nil, options:nil)
-      url = @@url_base + 'translate?' + 'key=' + @key + '&' + 'text=' + URI::encode(text) + '&' + 'lang=' + lang
-      if format then url += '&format=' + format end
-      if options then url += '&options=' + options.to_s end
-
-      url = URI(url)
-      res = JSON.parse(Net::HTTP.get(url))
-      check_errors(res)
-      if options == 1 then @detected = res['detected']['lang'] else @detected = nil end
-      return res['text']
+    # _format_ argument defaults to *plain*. Can be "plain" for plain text or "html" for HTMl marked text
+    # _options_ argument defaults to *0*. Can be "1" to include to the response the autodetected language of the source text. You can obtain it by attribute *detected*
+    def translate(text, lang, format: :plain, options: 0)
+      requester(:translate, {:key => @key, :lang => lang, :format => format, :options => options},
+                {:text => text})
     end
 
-    def check_errors(res)
+    def requester(method, params, body)
+      url_method = case method
+                     when :lang_list then 'getLangs?'
+                     when :lang_detect then 'detect?'
+                     when :translate then 'translate?'
+                   end
+      res = HTTP.post(Url_base + url_method, :params => params, :form => body)
+      res = JSON.parse(res)
+
       if res['code'] and res['code'] != 200
-        raise(YandexError , res['message'])
+        case res['code']
+          when 401 then raise(WrongAPIKeyError, res['message'])
+          when 402 then raise(BlockedAPIKeyError, res['message'])
+          when 404 then raise(DaylyLimitExceededError, res['message'])
+          when 413 then raise(MaximumTextSizeExceededError, res['message'])
+          when 422 then raise(TextCannotBeTranslatedError, res['message'])
+          when 501 then raise(SelectedTranslationDirectionNotSupportedError, res['message'])
+          else raise(YandexError , res['message'])
+        end
+      end
+
+      case method
+        when :lang_list then res
+        when :lang_detect then res['lang']
+        when :translate then
+          if params[:options] == 1 then @detected = res['detected']['lang'] else @detected = nil end
+          res['text']
       end
     end
-
   end
 end
