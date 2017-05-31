@@ -81,7 +81,7 @@ module YandexTranslator
         when :lang_detect then res['lang']
         when :translate then
           if params[:options] == 1 then @detected = res['detected']['lang'] else @detected = nil end
-          res['text']
+          res['text'][0]
       end
     end
   end
